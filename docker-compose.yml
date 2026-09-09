@@ -1,0 +1,53 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: defendx-postgres
+    environment:
+      POSTGRES_USER: defendx
+      POSTGRES_PASSWORD: defendx
+      POSTGRES_DB: defendx
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U defendx -d defendx"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: defendx-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql+psycopg2://defendx:defendx@postgres:5432/defendx
+      - JWT_SECRET=defendx-local-development-secret-change-in-production
+      - FRONTEND_ORIGIN=http://localhost:5173
+      - ADMIN_EMAIL=pavithra09102007@gmail.com
+      - ADMIN_PASSWORD=DefendX2026
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: defendx-frontend
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_URL=http://localhost:8000/api
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  postgres_data:

@@ -1,0 +1,21 @@
+# Node dependencies
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# Python environment
+__pycache__/
+*.py[cod]
+*$py.class
+*.env
+!.env.example
+venv/
+env/
+.venv/
+defendx.db
+
+# Logs & OS
+*.log
+.DS_Store
+Thumbs.db
