@@ -63,7 +63,9 @@ def get_module_detail(
     for q in module.quiz_questions:
         sanitized_questions.append({
             "question": q.get("question"),
-            "options": q.get("options", [])
+            "options": q.get("options", []),
+            "difficulty": q.get("difficulty", module.difficulty),
+            "topic": q.get("topic", module.category)
         })
 
     return schemas.AcademyModuleDetail(

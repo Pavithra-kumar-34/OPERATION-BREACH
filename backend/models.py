@@ -30,6 +30,7 @@ class Team(Base):
     max_hints = Column(Integer, default=3)
     status = Column(String(20), default="LOCKED")  # LOCKED, ACTIVE, PAUSED, COMPLETED
     score = Column(Float, default=0.0)
+    score_breakdown_json = Column(Text, default="{}")
     analyst_1_name = Column(String(100), nullable=False)
     analyst_2_name = Column(String(100), nullable=False)
     created_at = Column(DateTime, default=utcnow)
@@ -45,6 +46,7 @@ class Team(Base):
     actions = relationship("OperationAction", back_populates="team", cascade="all, delete-orphan")
     report = relationship("Report", back_populates="team", uselist=False, cascade="all, delete-orphan")
     score_breakdown = relationship("Score", back_populates="team", uselist=False, cascade="all, delete-orphan")
+    scenario_progress = relationship("ScenarioProgress", back_populates="team", cascade="all, delete-orphan")
 
 class Analyst(Base):
     __tablename__ = "analysts"
@@ -75,6 +77,9 @@ class Scenario(Base):
     response_actions_json = Column(Text, default="[]")  # list of actions with classifications: CORRECT, DANGEROUS, INCORRECT
     timeline_json = Column(Text, default="[]")
     indicators_json = Column(Text, default="[]")  # list of authoritative IOC objects for IOC search
+    stage_prompts_json = Column(Text, default="{}")
+    tactical_hints_json = Column(Text, default="[]")
+    report_fields_json = Column(Text, default="[]")
     created_at = Column(DateTime, default=utcnow)
     updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
 
@@ -100,6 +105,70 @@ class Scenario(Base):
     @property
     def indicators(self):
         return json.loads(self.indicators_json) if self.indicators_json else []
+
+    @property
+    def stage_prompts(self):
+        return json.loads(self.stage_prompts_json) if self.stage_prompts_json else {}
+
+    @property
+    def tactical_hints(self):
+        return json.loads(self.tactical_hints_json) if self.tactical_hints_json else []
+
+    @property
+    def report_fields(self):
+        return json.loads(self.report_fields_json) if self.report_fields_json else []
+
+
+class ScenarioProgress(Base):
+    __tablename__ = "scenario_progress"
+
+    id = Column(Integer, primary_key=True, index=True)
+    team_id = Column(Integer, ForeignKey("teams.id"), nullable=False)
+    scenario_id = Column(Integer, ForeignKey("scenarios.id"), nullable=False)
+    current_stage = Column(String(20), default="DETECT")
+    stage_status = Column(String(20), default="IN_PROGRESS")
+    answers_json = Column(Text, default="{}")
+    findings_json = Column(Text, default="[]")
+    score = Column(Float, default=0.0)
+    completion_status = Column(String(20), default="IN_PROGRESS")
+    report_data_json = Column(Text, default="{}")
+    detection_answer = Column(String(150), nullable=True)
+    detection_correct = Column(Boolean, default=False)
+    detection_attempts = Column(Integer, default=0)
+    hints_used = Column(Integer, default=0)
+    identification_submission_json = Column(Text, default="{}")
+    identification_correct = Column(Boolean, default=False)
+    selected_responses_json = Column(Text, default="[]")
+    report_submitted = Column(Boolean, default=False)
+    started_at = Column(DateTime, nullable=True)
+    end_time = Column(DateTime, nullable=True)
+    paused_at = Column(DateTime, nullable=True)
+    total_paused_seconds = Column(Integer, default=0)
+    created_at = Column(DateTime, default=utcnow)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
+
+    team = relationship("Team", back_populates="scenario_progress")
+    scenario = relationship("Scenario")
+
+    @property
+    def answers(self):
+        return json.loads(self.answers_json) if self.answers_json else {}
+
+    @property
+    def findings(self):
+        return json.loads(self.findings_json) if self.findings_json else []
+
+    @property
+    def report_data(self):
+        return json.loads(self.report_data_json) if self.report_data_json else {}
+
+    @property
+    def identification_submission(self):
+        return json.loads(self.identification_submission_json) if self.identification_submission_json else {}
+
+    @property
+    def selected_responses(self):
+        return json.loads(self.selected_responses_json) if self.selected_responses_json else []
 
 class Evidence(Base):
     __tablename__ = "evidences"

@@ -1,4 +1,5 @@
 from typing import Tuple
+from types import SimpleNamespace
 from sqlalchemy.orm import Session
 import models
 
@@ -20,7 +21,7 @@ def calculate_team_score(db: Session, team_id: int) -> Tuple[float, models.Score
     if not team:
         return 0.0, None
 
-    op_state = team.operation_state
+    op_state = next((p for p in team.scenario_progress if p.scenario_id == team.scenario_id), None)
     scenario = team.scenario
 
     detection_score = 0.0
@@ -48,41 +49,38 @@ def calculate_team_score(db: Session, team_id: int) -> Tuple[float, models.Score
         # 2. Investigation (200 pts)
         evidences = db.query(models.Evidence).filter(models.Evidence.scenario_id == scenario.id).all()
         total_evidence_count = len(evidences)
-        viewed_links = db.query(models.TeamEvidence).filter(
-            models.TeamEvidence.team_id == team_id,
-            models.TeamEvidence.viewed == True
-        ).all()
-        viewed_count = len(viewed_links)
+        viewed_ids = set(op_state.answers.get("viewed_evidence_ids", []))
+        viewed_count = len(viewed_ids)
 
         # Ratio of evidence inspected (up to 100 pts)
         if total_evidence_count > 0:
             investigation_score += (viewed_count / total_evidence_count) * 100.0
 
         # Findings created (up to 50 pts, 15 pts each)
-        findings_count = db.query(models.Finding).filter(models.Finding.team_id == team_id).count()
+        findings_count = len(op_state.findings)
         investigation_score += min(50.0, findings_count * 15.0)
 
         # IOC searches executed (up to 50 pts, 10 pts each)
-        ioc_searches_count = db.query(models.IOCSearch).filter(models.IOCSearch.team_id == team_id).count()
+        ioc_searches_count = op_state.answers.get("ioc_search_count", 0)
         investigation_score += min(50.0, ioc_searches_count * 10.0)
         investigation_score = min(200.0, investigation_score)
 
         # 3. Analysis (150 pts) - Accuracy of evidence tagging
         evidence_dict = {e.id: e for e in evidences}
-        team_evidence_flags = db.query(models.TeamEvidence).filter(models.TeamEvidence.team_id == team_id).all()
+        evidence_flags = op_state.answers.get("evidence_flags", {})
         analysis_points = 0.0
-        for te in team_evidence_flags:
-            ev = evidence_dict.get(te.evidence_id)
+        for evidence_id, flag in evidence_flags.items():
+            ev = evidence_dict.get(int(evidence_id))
             if not ev:
                 continue
-            if te.is_flagged_suspicious:
+            if flag == "suspicious":
                 total_decisions += 1
                 if ev.is_suspicious:
                     analysis_points += 20.0
                     correct_decisions += 1
                 else:
                     analysis_points -= 10.0
-            elif te.is_flagged_benign:
+            elif flag == "benign":
                 total_decisions += 1
                 if not ev.is_suspicious:
                     analysis_points += 20.0
@@ -135,26 +133,13 @@ def calculate_team_score(db: Session, team_id: int) -> Tuple[float, models.Score
         # 6. Authoritative Evidence Coverage (100 pts)
         auth_evidences = [e for e in evidences if e.is_authoritative]
         if auth_evidences:
-            viewed_auth_ids = {te.evidence_id for te in viewed_links}
-            viewed_auth_count = sum(1 for e in auth_evidences if e.id in viewed_auth_ids)
+            viewed_auth_count = sum(1 for e in auth_evidences if e.id in viewed_ids)
             evidence_score = (viewed_auth_count / len(auth_evidences)) * 100.0
 
         # 7. Incident Report (100 pts)
-        report = team.report
+        report = op_state.report_data
         if report:
-            sections = [
-                report.incident_summary,
-                report.attack_type,
-                report.affected_asset,
-                report.attack_vector,
-                report.timeline,
-                report.key_evidence,
-                report.iocs,
-                report.impact,
-                report.containment,
-                report.recovery,
-                report.recommendations
-            ]
+            sections = [report.get(field["key"], "") for field in scenario.report_fields]
             completed_sections = sum(1 for s in sections if s and len(s.strip()) >= 10)
             report_score = (completed_sections / 11.0) * 100.0
 
@@ -178,25 +163,20 @@ def calculate_team_score(db: Session, team_id: int) -> Tuple[float, models.Score
     accuracy_percentage = (correct_decisions / total_decisions * 100.0) if total_decisions > 0 else 0.0
 
     # Persist or update Score record
-    score_record = team.score_breakdown
-    if not score_record:
-        score_record = models.Score(team_id=team_id)
-        db.add(score_record)
-
-    score_record.total_score = round(total_score, 1)
-    score_record.detection_score = round(detection_score, 1)
-    score_record.investigation_score = round(investigation_score, 1)
-    score_record.analysis_score = round(analysis_score, 1)
-    score_record.identification_score = round(identification_score, 1)
-    score_record.response_score = round(response_score, 1)
-    score_record.evidence_score = round(evidence_score, 1)
-    score_record.report_score = round(report_score, 1)
-    score_record.efficiency_score = round(efficiency_score, 1)
-    score_record.accuracy_percentage = round(accuracy_percentage, 1)
-
-    team.score = score_record.total_score
+    breakdown = {
+        "detection_score": round(detection_score, 1),
+        "investigation_score": round(investigation_score, 1),
+        "analysis_score": round(analysis_score, 1),
+        "identification_score": round(identification_score, 1),
+        "response_score": round(response_score, 1),
+        "evidence_score": round(evidence_score, 1),
+        "report_score": round(report_score, 1),
+        "efficiency_score": round(efficiency_score, 1),
+        "accuracy_percentage": round(accuracy_percentage, 1)
+    }
+    op_state.score = round(total_score, 1)
+    op_state.score_breakdown_json = __import__("json").dumps(breakdown)
+    team.score = op_state.score
     db.commit()
-    db.refresh(score_record)
-    db.refresh(team)
-
-    return total_score, score_record
+    db.refresh(op_state)
+    return total_score, SimpleNamespace(total_score=op_state.score, **breakdown)

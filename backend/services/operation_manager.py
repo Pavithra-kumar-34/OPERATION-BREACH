@@ -9,7 +9,7 @@ from websocket import manager
 
 def get_operation_time_metrics(team: models.Team) -> Dict[str, Any]:
     """Calculates authoritative real-time timer metrics on the server."""
-    op_state = team.operation_state
+    op_state = next((p for p in team.scenario_progress if p.scenario_id == team.scenario_id), None)
     total_seconds = (team.time_limit_minutes or 60) * 60
 
     if not op_state or not op_state.started_at:
@@ -56,7 +56,10 @@ async def broadcast_team_update(db: Session, team_id: int, event_type: str = "ST
     """Calculates updated team score and broadcasts synchronized state to all team members."""
     total_score, score_breakdown = calculate_team_score(db, team_id)
     team = db.query(models.Team).filter(models.Team.id == team_id).first()
-    if not team or not team.operation_state:
+    if not team or not team.scenario_id:
+        return
+    op_state = next((p for p in team.scenario_progress if p.scenario_id == team.scenario_id), None)
+    if not op_state:
         return
 
     time_metrics = get_operation_time_metrics(team)
@@ -66,8 +69,8 @@ async def broadcast_team_update(db: Session, team_id: int, event_type: str = "ST
         "team_id": team.id,
         "team_name": team.team_name,
         "status": team.status,
-        "current_stage": team.operation_state.current_stage,
-        "stage_status": team.operation_state.stage_status,
+        "current_stage": op_state.current_stage,
+        "stage_status": op_state.stage_status,
         "total_score": team.score,
         "score_breakdown": {
             "detection": score_breakdown.detection_score if score_breakdown else 0,
@@ -81,7 +84,7 @@ async def broadcast_team_update(db: Session, team_id: int, event_type: str = "ST
             "accuracy": score_breakdown.accuracy_percentage if score_breakdown else 0,
         },
         "time_remaining_seconds": time_metrics["time_remaining_seconds"],
-        "hints_used": team.operation_state.hints_used,
+        "hints_used": op_state.hints_used,
         "max_hints": team.max_hints,
         "extra": extra or {}
     }

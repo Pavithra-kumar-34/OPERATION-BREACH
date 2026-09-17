@@ -298,6 +298,10 @@ export const AcademyModuleDetail = ({ moduleId, onBack, onComplete }) => {
                 <div style={{ fontWeight: 600, color: '#f1f5f9', fontSize: '0.95rem', marginBottom: '0.75rem' }}>
                   {qIdx + 1}. {q.question}
                 </div>
+                <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}>
+                  <span className="badge badge-cyan" style={{ fontSize: '0.65rem' }}>{q.topic}</span>
+                  <span className="badge badge-violet" style={{ fontSize: '0.65rem' }}>{q.difficulty}</span>
+                </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                   {q.options.map((opt, optIdx) => {
@@ -372,6 +376,15 @@ export const AcademyModuleDetail = ({ moduleId, onBack, onComplete }) => {
               </>
             )}
           </button>
+
+          {quizResult && (
+            <div style={{ marginTop: '1rem', padding: '1rem', border: '1px solid var(--border-glow)', borderRadius: 'var(--radius-md)', color: '#e2e8f0' }}>
+              <strong>Course result:</strong> {quizResult.correct_count} correct, {quizResult.total_questions - quizResult.correct_count} incorrect, {quizResult.score}%.
+              <span style={{ marginLeft: '0.5rem', color: quizResult.passed ? 'var(--emerald-success)' : 'var(--amber-warning)' }}>
+                {quizResult.passed ? 'COMPLETED' : 'IN PROGRESS'}
+              </span>
+            </div>
+          )}
         </form>
       </div>
     </div>

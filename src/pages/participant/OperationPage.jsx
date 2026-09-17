@@ -336,7 +336,11 @@ export const OperationPage = () => {
 
   // 2. PAUSED Banner
   const isPaused = opStatus?.status === 'PAUSED';
-  const isCompleted = opStatus?.status === 'COMPLETED';
+  const isCompleted = opStatus?.status === 'COMPLETED' || opStatus?.scenario_completed;
+  const reportField = (key, fallbackLabel, fallbackPlaceholder) => {
+    const field = scenario?.report_fields?.find((item) => item.key === key);
+    return field || { label: fallbackLabel, placeholder: fallbackPlaceholder };
+  };
 
   return (
     <div className="page-container">
@@ -490,8 +494,11 @@ export const OperationPage = () => {
               </div>
 
               <p style={{ color: '#cbd5e1', fontSize: '0.9rem', lineHeight: 1.6, marginBottom: '1.25rem' }}>
-                Analyze the incoming SIEM/EDR alert stream below. Identify the authoritative root cause alert that indicates the adversary's initial breach into the network.
+                {scenario?.stage_prompts?.DETECT || 'Analyze the incoming SIEM/EDR alert stream below and identify the authoritative root cause alert.'}
               </p>
+              <div className="mono" style={{ color: 'var(--amber-warning)', fontSize: '0.8rem', marginBottom: '1rem' }}>
+                Root signal: {scenario?.detection_signal}
+              </div>
 
               <form onSubmit={handleDetectSubmit}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem', marginBottom: '1.5rem' }}>
@@ -561,7 +568,7 @@ export const OperationPage = () => {
               </div>
 
               <p style={{ color: '#cbd5e1', fontSize: '0.9rem', lineHeight: 1.6, marginBottom: '1.25rem' }}>
-                Inspect the forensic telemetry artifacts below. Uncover malicious command lines, query indicators via the IOC database, record investigation findings, and unlock the chain of evidence.
+                {scenario?.stage_prompts?.INVESTIGATE || 'Inspect the forensic telemetry artifacts below and record investigation findings.'}
               </p>
 
               <EvidenceViewer
@@ -593,7 +600,7 @@ export const OperationPage = () => {
               </div>
 
               <p style={{ color: '#cbd5e1', fontSize: '0.9rem', lineHeight: 1.6, marginBottom: '1.25rem' }}>
-                Correlate your findings against the reconstructed adversary timeline. Ensure all evidence items are accurately classified as <strong>Suspicious</strong> or <strong>Benign</strong> to maximize analysis accuracy score.
+                {scenario?.stage_prompts?.ANALYZE || 'Correlate your findings against the reconstructed adversary timeline and classify the evidence.'}
               </p>
 
               {/* Timeline Display */}
@@ -636,7 +643,7 @@ export const OperationPage = () => {
               </div>
 
               <p style={{ color: '#cbd5e1', fontSize: '0.9rem', lineHeight: 1.6, marginBottom: '1.5rem' }}>
-                Synthesize your investigation and classify the exact attack type, initial access vector, primary affected asset, and primary threat IOC.
+                {scenario?.stage_prompts?.IDENTIFY || 'Synthesize your investigation and classify the attack details.'}
               </p>
 
               <form onSubmit={handleIdentifySubmit}>
@@ -741,7 +748,7 @@ export const OperationPage = () => {
                 color: '#fecdd3'
               }}>
                 <AlertTriangle size={16} style={{ display: 'inline', marginRight: '0.4rem', verticalAlign: 'text-bottom' }} />
-                <strong>Caution:</strong> Selecting dangerous destructive actions (e.g. premature reboot destroying memory artifacts) will penalize your response score. Choose containment actions with surgical precision.
+                <strong>Response objective:</strong> {scenario?.stage_prompts?.RESPOND || 'Choose containment actions with surgical precision.'}
               </div>
 
               <form onSubmit={handleResponseSubmit}>
@@ -803,7 +810,7 @@ export const OperationPage = () => {
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                   <FileText size={22} color="var(--cyan-primary)" />
-                  <h3 style={{ fontSize: '1.25rem', color: '#fff' }}>Stage 6: Final Incident Response Report</h3>
+                  <h3 style={{ fontSize: '1.25rem', color: '#fff' }}>Stage 6: {scenario?.name} Report</h3>
                 </div>
 
                 {!isCompleted && (
@@ -821,18 +828,18 @@ export const OperationPage = () => {
               </div>
 
               <p style={{ color: '#cbd5e1', fontSize: '0.9rem', lineHeight: 1.6, marginBottom: '1.25rem' }}>
-                Complete all 11 required sections for formal executive sign-off and root-cause analysis.
+                {scenario?.stage_prompts?.REPORT || 'Complete the scenario-specific sections for formal executive sign-off and root-cause analysis.'}
               </p>
 
               <form onSubmit={handleSubmitFinalReport}>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1.5rem' }}>
                   {/* 1. Incident Summary */}
                   <div className="form-group" style={{ gridColumn: 'span 2' }}>
-                    <label className="form-label">1. Executive Incident Summary</label>
+                    <label className="form-label">1. {reportField('incident_summary', 'Executive Incident Summary').label}</label>
                     <textarea
                       className="form-textarea"
                       rows="2"
-                      placeholder="Brief non-technical summary for executive leadership..."
+                      placeholder={reportField('incident_summary', '', 'Brief non-technical summary for executive leadership...').placeholder}
                       value={report.incident_summary}
                       onChange={(e) => setReport({ ...report, incident_summary: e.target.value })}
                       disabled={isCompleted || isPaused}
@@ -842,11 +849,11 @@ export const OperationPage = () => {
 
                   {/* 2. Attack Type */}
                   <div className="form-group">
-                    <label className="form-label">2. Confirmed Attack Type</label>
+                    <label className="form-label">2. {reportField('attack_type', 'Confirmed Attack Type').label}</label>
                     <input
                       type="text"
                       className="form-input"
-                      placeholder="e.g. Credential Harvesting & Lateral Movement"
+                      placeholder={reportField('attack_type', '', 'Describe the confirmed attack type.').placeholder}
                       value={report.attack_type}
                       onChange={(e) => setReport({ ...report, attack_type: e.target.value })}
                       disabled={isCompleted || isPaused}
@@ -856,11 +863,11 @@ export const OperationPage = () => {
 
                   {/* 3. Attack Vector */}
                   <div className="form-group">
-                    <label className="form-label">3. Initial Access Vector</label>
+                    <label className="form-label">3. {reportField('attack_vector', 'Initial Access Vector').label}</label>
                     <input
                       type="text"
                       className="form-input"
-                      placeholder="e.g. Phishing Email with Macro Attachment"
+                      placeholder={reportField('attack_vector', '', 'Describe the initial access vector.').placeholder}
                       value={report.attack_vector}
                       onChange={(e) => setReport({ ...report, attack_vector: e.target.value })}
                       disabled={isCompleted || isPaused}
@@ -870,11 +877,11 @@ export const OperationPage = () => {
 
                   {/* 4. Affected Asset */}
                   <div className="form-group">
-                    <label className="form-label">4. Affected Assets & Subnets</label>
+                    <label className="form-label">4. {reportField('affected_asset', 'Affected Assets & Subnets').label}</label>
                     <input
                       type="text"
                       className="form-input"
-                      placeholder="e.g. WS-FIN-04 (10.0.2.45), DB-FIN-PROD"
+                      placeholder={reportField('affected_asset', '', 'List affected assets and addresses.').placeholder}
                       value={report.affected_asset}
                       onChange={(e) => setReport({ ...report, affected_asset: e.target.value })}
                       disabled={isCompleted || isPaused}
@@ -884,11 +891,11 @@ export const OperationPage = () => {
 
                   {/* 5. Primary IOCs */}
                   <div className="form-group">
-                    <label className="form-label">5. Primary IOCs (IPs, Domains, Hashes)</label>
+                    <label className="form-label">5. {reportField('iocs', 'Primary IOCs (IPs, Domains, Hashes)').label}</label>
                     <input
                       type="text"
                       className="form-input mono"
-                      placeholder="e.g. c2-update.darknet-relay.com, 185.220.101.44"
+                      placeholder={reportField('iocs', '', 'List the authoritative IOCs.').placeholder}
                       value={report.iocs}
                       onChange={(e) => setReport({ ...report, iocs: e.target.value })}
                       disabled={isCompleted || isPaused}
@@ -898,11 +905,11 @@ export const OperationPage = () => {
 
                   {/* 6. Timeline */}
                   <div className="form-group" style={{ gridColumn: 'span 2' }}>
-                    <label className="form-label">6. Technical Incident Timeline</label>
+                    <label className="form-label">6. {reportField('timeline', 'Technical Incident Timeline').label}</label>
                     <textarea
                       className="form-textarea"
                       rows="2"
-                      placeholder="Chronological breakdown of key forensic events..."
+                      placeholder={reportField('timeline', '', 'Chronological breakdown of key forensic events.').placeholder}
                       value={report.timeline}
                       onChange={(e) => setReport({ ...report, timeline: e.target.value })}
                       disabled={isCompleted || isPaused}
@@ -912,11 +919,11 @@ export const OperationPage = () => {
 
                   {/* 7. Key Evidence */}
                   <div className="form-group">
-                    <label className="form-label">7. Authoritative Key Evidence</label>
+                    <label className="form-label">7. {reportField('key_evidence', 'Authoritative Key Evidence').label}</label>
                     <input
                       type="text"
                       className="form-input"
-                      placeholder="e.g. EV-01 MIME headers, EV-02 Sysmon Process Event"
+                      placeholder={reportField('key_evidence', '', 'Cite the strongest evidence records.').placeholder}
                       value={report.key_evidence}
                       onChange={(e) => setReport({ ...report, key_evidence: e.target.value })}
                       disabled={isCompleted || isPaused}
@@ -926,11 +933,11 @@ export const OperationPage = () => {
 
                   {/* 8. Impact */}
                   <div className="form-group">
-                    <label className="form-label">8. Business & Security Impact</label>
+                    <label className="form-label">8. {reportField('impact', 'Business & Security Impact').label}</label>
                     <input
                       type="text"
                       className="form-input"
-                      placeholder="e.g. Stolen credentials, Zero data exfiltrated"
+                      placeholder={reportField('impact', '', 'Describe business and security impact.').placeholder}
                       value={report.impact}
                       onChange={(e) => setReport({ ...report, impact: e.target.value })}
                       disabled={isCompleted || isPaused}
@@ -940,11 +947,11 @@ export const OperationPage = () => {
 
                   {/* 9. Containment */}
                   <div className="form-group">
-                    <label className="form-label">9. Containment Actions Executed</label>
+                    <label className="form-label">9. {reportField('containment', 'Containment Actions Executed').label}</label>
                     <input
                       type="text"
                       className="form-input"
-                      placeholder="e.g. Host network isolated, C2 IP sinkholed"
+                      placeholder={reportField('containment', '', 'Record the containment actions executed.').placeholder}
                       value={report.containment}
                       onChange={(e) => setReport({ ...report, containment: e.target.value })}
                       disabled={isCompleted || isPaused}
@@ -954,11 +961,11 @@ export const OperationPage = () => {
 
                   {/* 10. Recovery */}
                   <div className="form-group">
-                    <label className="form-label">10. Eradication & Recovery Plan</label>
+                    <label className="form-label">10. {reportField('recovery', 'Eradication & Recovery Plan').label}</label>
                     <input
                       type="text"
                       className="form-input"
-                      placeholder="e.g. Golden image restore, Kerberos tickets reset"
+                      placeholder={reportField('recovery', '', 'Describe eradication and recovery.').placeholder}
                       value={report.recovery}
                       onChange={(e) => setReport({ ...report, recovery: e.target.value })}
                       disabled={isCompleted || isPaused}
@@ -968,11 +975,11 @@ export const OperationPage = () => {
 
                   {/* 11. Recommendations */}
                   <div className="form-group" style={{ gridColumn: 'span 2' }}>
-                    <label className="form-label">11. Strategic Long-Term Recommendations</label>
+                    <label className="form-label">11. {reportField('recommendations', 'Strategic Long-Term Recommendations').label}</label>
                     <textarea
                       className="form-textarea"
                       rows="2"
-                      placeholder="e.g. Enforce FIDO2 hardware MFA, disable legacy macros via GPO..."
+                      placeholder={reportField('recommendations', '', 'List long-term recommendations.').placeholder}
                       value={report.recommendations}
                       onChange={(e) => setReport({ ...report, recommendations: e.target.value })}
                       disabled={isCompleted || isPaused}

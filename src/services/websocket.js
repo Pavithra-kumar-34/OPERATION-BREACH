@@ -11,11 +11,11 @@ class TeamSocketManager {
   }
 
   getWsUrl(teamId, token) {
-    const isHttps = window.location.protocol === 'https:';
-    const host = window.location.hostname || 'localhost';
-    const port = '8000';
-    const protocol = isHttps ? 'wss:' : 'ws:';
-    return `${protocol}//${host}:${port}/api/ws/team/${teamId}?token=${encodeURIComponent(token || '')}`;
+    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+    const apiEndpoint = new URL(apiUrl, window.location.origin);
+    const protocol = apiEndpoint.protocol === 'https:' ? 'wss:' : 'ws:';
+    const backendPath = apiEndpoint.pathname.replace(/\/$/, '');
+    return `${protocol}//${apiEndpoint.host}${backendPath}/ws/team/${teamId}?token=${encodeURIComponent(token || '')}`;
   }
 
   connect(teamId, token) {

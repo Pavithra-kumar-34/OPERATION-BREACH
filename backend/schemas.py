@@ -113,6 +113,9 @@ class ScenarioDetailResponse(BaseModel):
     response_actions: List[Dict[str, Any]]
     timeline: List[Dict[str, Any]]
     evidence_count: int
+    stage_prompts: Dict[str, str] = {}
+    tactical_hints: List[str] = []
+    report_fields: List[Dict[str, Any]] = []
 
 # ----------------- Academy Schemas -----------------
 class AcademyModuleSummary(BaseModel):
@@ -245,6 +248,7 @@ class OperationStatusResponse(BaseModel):
     completed_stages: List[str]
     analyst_1: str
     analyst_2: str
+    scenario_completed: bool = False
 
 # ----------------- Scoring & Leaderboard Schemas -----------------
 class LeaderboardEntry(BaseModel):

@@ -17,6 +17,20 @@ from services.audit import log_audit_event
 
 router = APIRouter(prefix="/api/operation", tags=["Operation"])
 
+def get_scenario_progress(db: Session, team: models.Team, create: bool = True):
+    if not team or not team.scenario_id:
+        return None
+    progress = db.query(models.ScenarioProgress).filter(
+        models.ScenarioProgress.team_id == team.id,
+        models.ScenarioProgress.scenario_id == team.scenario_id
+    ).first()
+    if not progress and create:
+        progress = models.ScenarioProgress(team_id=team.id, scenario_id=team.scenario_id)
+        db.add(progress)
+        db.commit()
+        db.refresh(progress)
+    return progress
+
 @router.get("/status", response_model=schemas.OperationStatusResponse)
 def get_operation_status(
     current_user: dict = Depends(get_current_analyst),
@@ -27,12 +41,9 @@ def get_operation_status(
     if not team:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found.")
 
-    op_state = team.operation_state
+    op_state = get_scenario_progress(db, team)
     if not op_state:
-        op_state = models.TeamOperationState(team_id=team.id, current_stage="DETECT")
-        db.add(op_state)
-        db.commit()
-        db.refresh(op_state)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No scenario assigned to team.")
 
     time_metrics = get_operation_time_metrics(team)
     total_score, score_breakdown = calculate_team_score(db, team_id)
@@ -40,7 +51,7 @@ def get_operation_status(
     stages_order = ["DETECT", "INVESTIGATE", "ANALYZE", "IDENTIFY", "RESPOND", "REPORT"]
     curr_idx = stages_order.index(op_state.current_stage) if op_state.current_stage in stages_order else 0
     completed_stages = stages_order[:curr_idx]
-    if op_state.is_completed:
+    if op_state.completion_status == "COMPLETED":
         completed_stages = stages_order
 
     return schemas.OperationStatusResponse(
@@ -59,7 +70,7 @@ def get_operation_status(
         total_time_seconds=time_metrics["total_time_seconds"],
         hints_used=op_state.hints_used,
         max_hints=team.max_hints,
-        total_score=team.score,
+        total_score=op_state.score,
         score_breakdown={
             "detection": score_breakdown.detection_score if score_breakdown else 0,
             "investigation": score_breakdown.investigation_score if score_breakdown else 0,
@@ -73,7 +84,8 @@ def get_operation_status(
         },
         completed_stages=completed_stages,
         analyst_1=team.analyst_1_name,
-        analyst_2=team.analyst_2_name
+        analyst_2=team.analyst_2_name,
+        scenario_completed=op_state.completion_status == "COMPLETED"
     )
 
 # ----------------- STAGE 1: DETECT -----------------
@@ -88,7 +100,7 @@ async def submit_detection(
     team = db.query(models.Team).filter(models.Team.id == team_id).first()
     verify_operation_active(team)
 
-    op_state = team.operation_state
+    op_state = get_scenario_progress(db, team)
     if op_state.current_stage != "DETECT":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -150,7 +162,10 @@ def get_team_evidences(
 
     evidences = db.query(models.Evidence).filter(models.Evidence.scenario_id == team.scenario_id).all()
     team_ev_map = {te.evidence_id: te for te in team.team_evidence}
-    viewed_codes = {ev.evidence_code for ev in evidences if team_ev_map.get(ev.id) and team_ev_map[ev.id].viewed}
+    progress = get_scenario_progress(db, team)
+    viewed_ids = set(progress.answers.get("viewed_evidence_ids", [])) if progress else set()
+    evidence_flags = progress.answers.get("evidence_flags", {}) if progress else {}
+    viewed_codes = {ev.evidence_code for ev in evidences if ev.id in viewed_ids}
 
     results = []
     for ev in evidences:
@@ -170,9 +185,9 @@ def get_team_evidences(
             is_authoritative=ev.is_authoritative,
             prerequisite_evidence_code=ev.prerequisite_evidence_code,
             is_locked=is_locked,
-            viewed=te.viewed if te else False,
-            is_flagged_suspicious=te.is_flagged_suspicious if te else False,
-            is_flagged_benign=te.is_flagged_benign if te else False,
+            viewed=ev.id in viewed_ids,
+            is_flagged_suspicious=evidence_flags.get(str(ev.id)) == "suspicious",
+            is_flagged_benign=evidence_flags.get(str(ev.id)) == "benign",
             viewed_by=te.viewed_by if te else None
         ))
     return results
@@ -210,6 +225,12 @@ async def view_evidence(
         if not te.viewed_by:
             te.viewed_by = analyst_name
 
+    progress = get_scenario_progress(db, team)
+    answers = progress.answers
+    answers.setdefault("viewed_evidence_ids", [])
+    if evidence_id not in answers["viewed_evidence_ids"]:
+        answers["viewed_evidence_ids"].append(evidence_id)
+    progress.answers_json = json.dumps(answers)
     db.commit()
 
     log_audit_event(
@@ -258,6 +279,11 @@ async def flag_evidence(
         te.is_flagged_suspicious = False
         te.is_flagged_benign = False
 
+    progress = get_scenario_progress(db, team)
+    answers = progress.answers
+    answers.setdefault("evidence_flags", {})
+    answers["evidence_flags"][str(flag_data.evidence_id)] = flag_data.flag_type
+    progress.answers_json = json.dumps(answers)
     db.commit()
 
     log_audit_event(
@@ -304,6 +330,10 @@ async def search_ioc(
         match_details_json=json.dumps(match or {})
     )
     db.add(search_rec)
+    progress = get_scenario_progress(db, team)
+    answers = progress.answers
+    answers["ioc_search_count"] = answers.get("ioc_search_count", 0) + 1
+    progress.answers_json = json.dumps(answers)
     db.commit()
 
     log_audit_event(
@@ -331,17 +361,9 @@ def get_findings(
     db: Session = Depends(get_db)
 ):
     team_id = current_user.get("team_id")
-    findings = db.query(models.Finding).filter(models.Finding.team_id == team_id).order_by(models.Finding.created_at.desc()).all()
-    return [
-        schemas.FindingResponse(
-            id=f.id,
-            analyst_name=f.analyst_name,
-            description=f.description,
-            evidence_ids=f.evidence_ids,
-            created_at=f.created_at
-        )
-        for f in findings
-    ]
+    team = db.query(models.Team).filter(models.Team.id == team_id).first()
+    progress = get_scenario_progress(db, team)
+    return progress.findings if progress else []
 
 @router.post("/findings", response_model=schemas.FindingResponse)
 async def create_finding(
@@ -357,15 +379,18 @@ async def create_finding(
     if not finding_data.description or len(finding_data.description.strip()) < 5:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Finding description must be meaningful (>= 5 chars).")
 
-    finding = models.Finding(
-        team_id=team_id,
-        analyst_name=analyst_name,
-        description=finding_data.description.strip(),
-        evidence_ids_json=json.dumps(finding_data.evidence_ids)
-    )
-    db.add(finding)
+    progress = get_scenario_progress(db, team)
+    finding = {
+        "id": len(progress.findings) + 1,
+        "analyst_name": analyst_name,
+        "description": finding_data.description.strip(),
+        "evidence_ids": finding_data.evidence_ids,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    findings = progress.findings
+    findings.insert(0, finding)
+    progress.findings_json = json.dumps(findings)
     db.commit()
-    db.refresh(finding)
 
     log_audit_event(
         db=db,
@@ -373,18 +398,12 @@ async def create_finding(
         role="ANALYST",
         action="CREATE_FINDING",
         team_code=team.team_code,
-        payload={"finding_id": finding.id, "desc": finding.description[:50]}
+        payload={"finding_id": finding["id"], "desc": finding["description"][:50]}
     )
 
-    await broadcast_team_update(db, team_id, event_type="FINDING_ADDED", extra={"finding_id": finding.id})
+    await broadcast_team_update(db, team_id, event_type="FINDING_ADDED", extra={"finding_id": finding["id"]})
 
-    return schemas.FindingResponse(
-        id=finding.id,
-        analyst_name=finding.analyst_name,
-        description=finding.description,
-        evidence_ids=finding.evidence_ids,
-        created_at=finding.created_at
-    )
+    return finding
 
 # ----------------- HINTS -----------------
 @router.post("/hints", response_model=dict)
@@ -397,7 +416,7 @@ async def request_hint(
     team = db.query(models.Team).filter(models.Team.id == team_id).first()
     verify_operation_active(team)
 
-    op_state = team.operation_state
+    op_state = get_scenario_progress(db, team)
     if op_state.hints_used >= team.max_hints:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -407,11 +426,7 @@ async def request_hint(
     op_state.hints_used += 1
     hint_index = op_state.hints_used
 
-    scenario_hints = [
-        "Review outbound network traffic on port 443 with anomalous JA3 TLS hashes and external IP destinations.",
-        "Inspect Sysmon Event ID 10 (ProcessAccess) targeting lsass.exe to trace credential harvesting attempts.",
-        "Correlate the external C2 domain with the lookalike email sender domain to identify the threat actor infrastructure."
-    ]
+    scenario_hints = team.scenario.tactical_hints if team.scenario else []
     hint_text = scenario_hints[min(hint_index - 1, len(scenario_hints) - 1)]
 
     db.commit()
@@ -445,12 +460,13 @@ async def advance_stage(
     team = db.query(models.Team).filter(models.Team.id == team_id).first()
     verify_operation_active(team)
 
-    op_state = team.operation_state
+    op_state = get_scenario_progress(db, team)
     current_stage = op_state.current_stage
 
     if current_stage == "INVESTIGATE":
         # Check minimum investigation criteria (at least 2 evidences viewed or 1 finding created)
-        viewed_count = db.query(models.TeamEvidence).filter(models.TeamEvidence.team_id == team_id, models.TeamEvidence.viewed == True).count()
+        progress = get_scenario_progress(db, team)
+        viewed_count = len(progress.answers.get("viewed_evidence_ids", []))
         if viewed_count < 2:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Must inspect at least 2 evidence records before proceeding to Analysis.")
         op_state.current_stage = "ANALYZE"
@@ -475,7 +491,7 @@ async def submit_identification(
     team = db.query(models.Team).filter(models.Team.id == team_id).first()
     verify_operation_active(team)
 
-    op_state = team.operation_state
+    op_state = get_scenario_progress(db, team)
     if op_state.current_stage != "IDENTIFY":
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Cannot submit identification in stage '{op_state.current_stage}'.")
 
@@ -536,7 +552,7 @@ async def submit_response(
     team = db.query(models.Team).filter(models.Team.id == team_id).first()
     verify_operation_active(team)
 
-    op_state = team.operation_state
+    op_state = get_scenario_progress(db, team)
     if op_state.current_stage != "RESPOND":
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Cannot submit response in stage '{op_state.current_stage}'.")
 
@@ -571,27 +587,10 @@ def get_report(
 ):
     team_id = current_user.get("team_id")
     team = db.query(models.Team).filter(models.Team.id == team_id).first()
-    report = team.report
-    if not report:
-        report = models.Report(team_id=team_id, analyst_name=current_user.get("analyst_name"))
-        db.add(report)
-        db.commit()
-        db.refresh(report)
-
-    return {
-        "incident_summary": report.incident_summary,
-        "attack_type": report.attack_type,
-        "affected_asset": report.affected_asset,
-        "attack_vector": report.attack_vector,
-        "timeline": report.timeline,
-        "key_evidence": report.key_evidence,
-        "iocs": report.iocs,
-        "impact": report.impact,
-        "containment": report.containment,
-        "recovery": report.recovery,
-        "recommendations": report.recommendations,
-        "is_final": report.is_final
-    }
+    progress = get_scenario_progress(db, team)
+    report = progress.report_data
+    report["is_final"] = progress.report_submitted
+    return report
 
 @router.put("/report", response_model=dict)
 async def update_report(
@@ -604,16 +603,13 @@ async def update_report(
     team = db.query(models.Team).filter(models.Team.id == team_id).first()
     verify_operation_active(team)
 
-    report = team.report
-    if not report:
-        report = models.Report(team_id=team_id, analyst_name=analyst_name)
-        db.add(report)
-
-    if report.is_final:
+    progress = get_scenario_progress(db, team)
+    if progress.report_submitted:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Final report has already been submitted and cannot be edited.")
 
-    for field, val in report_data.dict(exclude_unset=True).items():
-        setattr(report, field, val)
+    report = progress.report_data
+    report.update(report_data.dict(exclude_unset=True))
+    progress.report_data_json = json.dumps(report)
 
     db.commit()
 
@@ -639,23 +635,15 @@ async def submit_final_report(
     team = db.query(models.Team).filter(models.Team.id == team_id).first()
     verify_operation_active(team)
 
-    report = team.report
+    progress = get_scenario_progress(db, team)
+    report = progress.report_data
     if not report:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Report draft does not exist.")
 
     # Validate 11 mandatory sections
     sections = {
-        "Incident Summary": report.incident_summary,
-        "Attack Type": report.attack_type,
-        "Affected Asset": report.affected_asset,
-        "Attack Vector": report.attack_vector,
-        "Timeline": report.timeline,
-        "Key Evidence": report.key_evidence,
-        "IOCs": report.iocs,
-        "Impact": report.impact,
-        "Containment": report.containment,
-        "Recovery": report.recovery,
-        "Recommendations": report.recommendations
+        field["label"]: report.get(field["key"], "")
+        for field in team.scenario.report_fields
     }
 
     missing = [name for name, val in sections.items() if not val or len(val.strip()) < 10]
@@ -665,12 +653,10 @@ async def submit_final_report(
             detail=f"All 11 report sections must be completed before submission. Incomplete: {', '.join(missing[:3])} ({len(missing)} total missing)."
         )
 
-    report.is_final = True
-    team.status = "COMPLETED"
-    team.operation_state.is_completed = True
-    team.operation_state.report_submitted = True
-    team.operation_state.stage_status = "COMPLETED"
-    team.operation_state.end_time = datetime.now(timezone.utc)
+    progress.report_submitted = True
+    progress.completion_status = "COMPLETED"
+    progress.stage_status = "COMPLETED"
+    progress.end_time = datetime.now(timezone.utc)
 
     db.commit()
 

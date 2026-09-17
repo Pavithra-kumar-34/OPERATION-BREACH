@@ -68,5 +68,8 @@ def get_scenario_detail(
         identification_options=scenario.identification_options,
         response_actions=sanitized_responses,
         timeline=scenario.timeline,
-        evidence_count=evidence_count
+        evidence_count=evidence_count,
+        stage_prompts=scenario.stage_prompts,
+        tactical_hints=scenario.tactical_hints,
+        report_fields=scenario.report_fields
     )

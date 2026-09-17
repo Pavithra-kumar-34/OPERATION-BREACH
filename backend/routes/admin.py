@@ -46,10 +46,13 @@ async def control_competition(
         for team in teams:
             if team.status != "COMPLETED":
                 team.status = "ACTIVE"
-                if team.operation_state:
-                    if not team.operation_state.started_at:
-                        team.operation_state.started_at = now
-                        team.operation_state.end_time = now + timedelta(minutes=team.time_limit_minutes or 60)
+                progress = next((p for p in team.scenario_progress if p.scenario_id == team.scenario_id), None)
+                if not progress and team.scenario_id:
+                    progress = models.ScenarioProgress(team_id=team.id, scenario_id=team.scenario_id)
+                    db.add(progress)
+                if progress and not progress.started_at:
+                    progress.started_at = now
+                    progress.end_time = now + timedelta(minutes=team.time_limit_minutes or 60)
 
         db.commit()
         log_audit_event(db, actor=current_admin["email"], role="ADMIN", action="COMPETITION_STARTED")
@@ -61,8 +64,9 @@ async def control_competition(
         for team in teams:
             if team.status == "ACTIVE":
                 team.status = "PAUSED"
-                if team.operation_state and not team.operation_state.paused_at:
-                    team.operation_state.paused_at = now
+                progress = next((p for p in team.scenario_progress if p.scenario_id == team.scenario_id), None)
+                if progress and not progress.paused_at:
+                    progress.paused_at = now
 
         db.commit()
         log_audit_event(db, actor=current_admin["email"], role="ADMIN", action="COMPETITION_PAUSED")
@@ -74,10 +78,11 @@ async def control_competition(
         for team in teams:
             if team.status == "PAUSED":
                 team.status = "ACTIVE"
-                if team.operation_state and team.operation_state.paused_at:
-                    pause_delta = int((now - team.operation_state.paused_at).total_seconds())
-                    team.operation_state.total_paused_seconds = (team.operation_state.total_paused_seconds or 0) + max(0, pause_delta)
-                    team.operation_state.paused_at = None
+                progress = next((p for p in team.scenario_progress if p.scenario_id == team.scenario_id), None)
+                if progress and progress.paused_at:
+                    pause_delta = int((now - progress.paused_at).total_seconds())
+                    progress.total_paused_seconds = (progress.total_paused_seconds or 0) + max(0, pause_delta)
+                    progress.paused_at = None
 
         db.commit()
         log_audit_event(db, actor=current_admin["email"], role="ADMIN", action="COMPETITION_RESUMED")
@@ -88,9 +93,9 @@ async def control_competition(
         settings.status = "COMPLETED"
         for team in teams:
             team.status = "COMPLETED"
-            if team.operation_state:
-                team.operation_state.is_completed = True
-                team.operation_state.end_time = now
+            for progress in team.scenario_progress:
+                progress.completion_status = "COMPLETED"
+                progress.end_time = now
 
         db.commit()
         log_audit_event(db, actor=current_admin["email"], role="ADMIN", action="COMPETITION_ENDED")
@@ -102,23 +107,27 @@ async def control_competition(
         for team in teams:
             team.status = "LOCKED"
             team.score = 0.0
-            if team.operation_state:
-                team.operation_state.current_stage = "DETECT"
-                team.operation_state.stage_status = "IN_PROGRESS"
-                team.operation_state.started_at = None
-                team.operation_state.end_time = None
-                team.operation_state.paused_at = None
-                team.operation_state.total_paused_seconds = 0
-                team.operation_state.detection_answer = None
-                team.operation_state.detection_correct = False
-                team.operation_state.detection_attempts = 0
-                team.operation_state.hints_used = 0
-                team.operation_state.identification_submission_json = "{}"
-                team.operation_state.identification_correct = False
-                team.operation_state.selected_responses_json = "[]"
-                team.operation_state.report_data_json = "{}"
-                team.operation_state.report_submitted = False
-                team.operation_state.is_completed = False
+            for progress in team.scenario_progress:
+                progress.current_stage = "DETECT"
+                progress.stage_status = "IN_PROGRESS"
+                progress.started_at = None
+                progress.end_time = None
+                progress.paused_at = None
+                progress.total_paused_seconds = 0
+                progress.detection_answer = None
+                progress.detection_correct = False
+                progress.detection_attempts = 0
+                progress.hints_used = 0
+                progress.answers_json = "{}"
+                progress.findings_json = "[]"
+                progress.identification_submission_json = "{}"
+                progress.identification_correct = False
+                progress.selected_responses_json = "[]"
+                progress.report_data_json = "{}"
+                progress.report_submitted = False
+                progress.completion_status = "IN_PROGRESS"
+                progress.score = 0.0
+                progress.score_breakdown_json = "{}"
 
             # Clear team evidence, findings, searches
             db.query(models.TeamEvidence).filter(models.TeamEvidence.team_id == team.id).delete()

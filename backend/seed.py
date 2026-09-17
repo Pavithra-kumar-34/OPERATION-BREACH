@@ -532,6 +532,38 @@ def seed_database(db: Session):
     ]
 
     for m in modules_data:
+        for question in m["quiz_questions"]:
+            question.setdefault("difficulty", m["difficulty"])
+            question.setdefault("topic", m["category"])
+        supplemental_questions = [
+            {
+                "question": f"Which analyst habit best supports {m['title']} work?",
+                "options": ["Record evidence and validate it against trusted telemetry", "Ignore timestamps", "Delete raw logs after review", "Treat every alert as confirmed"],
+                "correct_index": 0,
+                "explanation": "Evidence-backed validation and accurate records are core Blue Team practices.",
+                "difficulty": m["difficulty"],
+                "topic": m["category"]
+            },
+            {
+                "question": f"What should a Blue Team analyst preserve while investigating {m['category']} activity?",
+                "options": ["Relevant logs, timestamps, and source context", "Only the final alert title", "Unverified social media posts", "A screenshot with no timestamp"],
+                "correct_index": 0,
+                "explanation": "Complete, timestamped telemetry enables correlation, review, and defensible response decisions.",
+                "difficulty": m["difficulty"],
+                "topic": m["category"]
+            },
+            {
+                "question": f"Which response improves future detection of {m['title']} incidents?",
+                "options": ["Turn off the related telemetry", "Document indicators and update a tested detection rule", "Reuse an unvalidated IOC forever", "Close the case without lessons learned"],
+                "correct_index": 1,
+                "explanation": "Documented indicators and tested detections turn an investigation into durable defensive coverage.",
+                "difficulty": m["difficulty"],
+                "topic": m["category"]
+            }
+        ]
+        m["quiz_questions"].extend(supplemental_questions[:max(0, 5 - len(m["quiz_questions"]))])
+
+    for m in modules_data:
         existing = db.query(models.AcademyModule).filter(models.AcademyModule.module_number == m["module_number"]).first()
         if not existing:
             mod = models.AcademyModule(
@@ -1019,6 +1051,80 @@ def seed_database(db: Session):
     ]
 
     for s_data in scenarios_data:
+        scenario_metadata = {
+            "fincore-phishing": {
+                "stage_prompts": {
+                    "DETECT": "Triage the FinCore mail and endpoint queue to identify the first confirmed credential-theft signal.",
+                    "INVESTIGATE": "Trace the phishing message from MIME headers through the PowerShell child process, C2 IP, and stolen-account logons.",
+                    "ANALYZE": "Correlate source 10.0.2.45 with destination 185.220.101.44 and the SMB pivot into the finance database.",
+                    "IDENTIFY": "Classify the FinCore intrusion using the email, authentication, and lateral-movement evidence.",
+                    "RESPOND": "Contain the workstation and account while preserving volatile evidence and terminating attacker sessions.",
+                    "REPORT": "Write the executive FinCore phishing and lateral-movement report for finance leadership."
+                },
+                "tactical_hints": ["Compare SPF/DKIM failures with the sender domain.", "Use Event 4624 source and destination addresses to prove the SMB pivot.", "Terminate active sessions after preserving the LSASS and PowerShell evidence."],
+                "report_fields": [
+                    {"key": "incident_summary", "label": "FinCore Executive Summary", "placeholder": "Summarize the phishing compromise and finance-network exposure."},
+                    {"key": "attack_type", "label": "Credential Theft and Lateral Movement", "placeholder": "Describe the credential harvesting and pivot technique."},
+                    {"key": "affected_asset", "label": "Compromised User and Finance Hosts", "placeholder": "List m.davis, WS-FIN-04, DB-FIN-PROD, and IPs."},
+                    {"key": "attack_vector", "label": "Phishing Entry Point", "placeholder": "Record the lookalike sender and malicious document or URL."},
+                    {"key": "timeline", "label": "Authentication and Execution Timeline", "placeholder": "Sequence delivery, macro, PowerShell, LSASS access, and SMB logon."},
+                    {"key": "key_evidence", "label": "Mail, Endpoint, and Authentication Evidence", "placeholder": "Cite EV-01, EV-02, EV-04, and EV-05."},
+                    {"key": "iocs", "label": "FinCore IOCs", "placeholder": "List the domain, source/destination IPs, sender, and hash."},
+                    {"key": "impact", "label": "Credential and Finance Impact", "placeholder": "Describe account exposure and attempted database access."},
+                    {"key": "containment", "label": "Account and Session Containment", "placeholder": "Record host isolation, session termination, and password reset."},
+                    {"key": "recovery", "label": "Identity Recovery", "placeholder": "Describe ticket invalidation, clean-host validation, and monitoring."},
+                    {"key": "recommendations", "label": "Anti-Phishing Recommendations", "placeholder": "Recommend phishing-resistant MFA, mail controls, and PowerShell policy."}
+                ]
+            },
+            "healthnet-ransomware": {
+                "stage_prompts": {
+                    "DETECT": "Prioritize the HealthNet ransomware alert that proves encryption and recovery sabotage are underway.",
+                    "INVESTIGATE": "Follow the VPN exploit, web shell, privileged pivot, encryptor execution, and ransom note across clinical systems.",
+                    "ANALYZE": "Map the infection timeline and determine which EMR, backup, and patient-care systems are at risk.",
+                    "IDENTIFY": "Identify the ransomware family, exploited edge, affected clinical systems, and malware IOC.",
+                    "RESPOND": "Isolate infected endpoints, block C2, contain the account, and choose a verified backup recovery path.",
+                    "REPORT": "Prepare the HealthNet ransomware incident report with patient-care impact and recovery decisions."
+                },
+                "tactical_hints": ["Look for shadow-copy deletion before judging the encryption alert.", "Separate the initial VPN exploit from the later EMR execution.", "Protect clinical continuity while restoring only immutable, validated backups."],
+                "report_fields": [
+                    {"key": "incident_summary", "label": "HealthNet Ransomware Executive Summary", "placeholder": "Summarize the outbreak, encryption scope, and clinical urgency."},
+                    {"key": "attack_type", "label": "Ransomware and Extortion Classification", "placeholder": "Describe encryption, recovery sabotage, and extortion."},
+                    {"key": "affected_asset", "label": "Affected Clinical Systems", "placeholder": "List VPN-GW-01, EMR-APP-SRV, endpoints, and critical services."},
+                    {"key": "attack_vector", "label": "Initial Infection Indicator", "placeholder": "Record the VPN exploit and web shell evidence."},
+                    {"key": "timeline", "label": "Outbreak Timeline", "placeholder": "Sequence exploit, pivot, shadow deletion, and file encryption."},
+                    {"key": "key_evidence", "label": "Ransomware Evidence", "placeholder": "Cite the exploit log, process event, hash, and ransom note."},
+                    {"key": "iocs", "label": "Malware and C2 IOCs", "placeholder": "List the encryptor hash, C2 IP, and extortion portal."},
+                    {"key": "impact", "label": "Patient and Critical Service Impact", "placeholder": "Describe EMR availability, patient safety, and backup impact."},
+                    {"key": "containment", "label": "Isolation and Account Containment", "placeholder": "Record machine isolation, segmentation, C2 blocking, and account lockout."},
+                    {"key": "recovery", "label": "Backup and Recovery Decision", "placeholder": "Describe immutable backup validation and staged restoration."},
+                    {"key": "recommendations", "label": "Ransomware Resilience Recommendations", "placeholder": "Recommend segmentation, EDR controls, patching, and recovery exercises."}
+                ]
+            },
+            "cloudguard-supply-chain": {
+                "stage_prompts": {
+                    "DETECT": "Select the CloudGuard cloud alert that links unexpected IAM use to a compromised build workload.",
+                    "INVESTIGATE": "Inspect the package diff, post-install hook, build runner, CloudTrail event, and outbound collection endpoint.",
+                    "ANALYZE": "Compare package versions and hashes, then reconstruct the dependency-to-IAM-token compromise path.",
+                    "IDENTIFY": "Classify the trusted dependency backdoor, affected workload, and exfiltration IOC.",
+                    "RESPOND": "Revoke credentials, remove the package, isolate the runner, rotate secrets, and validate a clean build.",
+                    "REPORT": "Deliver the CloudGuard supply-chain incident report with build integrity and cloud-account impact."
+                },
+                "tactical_hints": ["A postinstall hook reading IMDS is not normal package telemetry.", "Compare the lockfile version and SHA-256 with the last trusted build.", "Rotate every secret reachable by the compromised CI role, not just the role itself."],
+                "report_fields": [
+                    {"key": "incident_summary", "label": "CloudGuard Supply-Chain Executive Summary", "placeholder": "Summarize the dependency compromise and cloud exposure."},
+                    {"key": "attack_type", "label": "Backdoor and Token-Exfiltration Classification", "placeholder": "Describe the trusted-package backdoor and IAM abuse."},
+                    {"key": "affected_asset", "label": "Build and Cloud Workloads", "placeholder": "List the runner, IAM role, S3 archive, and affected workloads."},
+                    {"key": "attack_vector", "label": "Compromised Dependency Version", "placeholder": "Record event-stream-metrics@3.1.4 and the build trigger."},
+                    {"key": "timeline", "label": "Build Pipeline Compromise Timeline", "placeholder": "Sequence package publication, npm install, IMDS access, and S3 reads."},
+                    {"key": "key_evidence", "label": "Package and CloudTrail Evidence", "placeholder": "Cite EV-C01 and EV-C02 plus the version/hash comparison."},
+                    {"key": "iocs", "label": "Supply-Chain IOCs", "placeholder": "List the package hash, collection domain, and source IP."},
+                    {"key": "impact", "label": "Cloud and Data Impact", "placeholder": "Describe token exposure, archive access, and workload trust impact."},
+                    {"key": "containment", "label": "IAM and Workload Containment", "placeholder": "Record role revocation, deny policy, runner isolation, and egress blocking."},
+                    {"key": "recovery", "label": "Clean Build and Secret Rotation", "placeholder": "Describe package removal, clean rebuild validation, and secret rotation."},
+                    {"key": "recommendations", "label": "Supply-Chain Hardening Recommendations", "placeholder": "Recommend provenance attestations, lockfile policy, IMDSv2, and least privilege."}
+                ]
+            }
+        }.get(s_data["key"], {})
         scenario = db.query(models.Scenario).filter(models.Scenario.key == s_data["key"]).first()
         if not scenario:
             scenario = models.Scenario(
@@ -1037,6 +1143,9 @@ def seed_database(db: Session):
                 timeline_json=json.dumps(s_data["timeline"]),
                 indicators_json=json.dumps(s_data["indicators"])
             )
+            scenario.stage_prompts_json = json.dumps(scenario_metadata.get("stage_prompts", {}))
+            scenario.tactical_hints_json = json.dumps(scenario_metadata.get("tactical_hints", []))
+            scenario.report_fields_json = json.dumps(scenario_metadata.get("report_fields", []))
             db.add(scenario)
             db.commit()
             db.refresh(scenario)
@@ -1055,6 +1164,9 @@ def seed_database(db: Session):
             scenario.response_actions_json = json.dumps(s_data["response_actions"])
             scenario.timeline_json = json.dumps(s_data["timeline"])
             scenario.indicators_json = json.dumps(s_data["indicators"])
+            scenario.stage_prompts_json = json.dumps(scenario_metadata.get("stage_prompts", {}))
+            scenario.tactical_hints_json = json.dumps(scenario_metadata.get("tactical_hints", []))
+            scenario.report_fields_json = json.dumps(scenario_metadata.get("report_fields", []))
             db.commit()
 
         # Seed Evidences for this scenario
