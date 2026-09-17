@@ -1,7 +1,7 @@
 import os
 import logging
 from dotenv import load_dotenv
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 # Load environment variables
@@ -46,6 +46,29 @@ def get_engine():
 engine = get_engine()
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
+
+def migrate_additive_schema():
+    """Add columns introduced after the initial database was created."""
+    required_columns = {
+        "scenarios": {
+            "stage_prompts_json": "TEXT DEFAULT '{}'",
+            "tactical_hints_json": "TEXT DEFAULT '[]'",
+            "report_fields_json": "TEXT DEFAULT '[]'"
+        },
+        "scenario_progress": {
+            "paused_at": "TIMESTAMP",
+            "total_paused_seconds": "INTEGER DEFAULT 0"
+        }
+    }
+    inspector = inspect(engine)
+    with engine.begin() as connection:
+        for table_name, columns in required_columns.items():
+            if table_name not in inspector.get_table_names():
+                continue
+            existing = {column["name"] for column in inspector.get_columns(table_name)}
+            for column_name, column_type in columns.items():
+                if column_name not in existing:
+                    connection.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}"))
 
 def get_db():
     """FastAPI dependency yielding a database session."""

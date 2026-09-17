@@ -11,7 +11,7 @@ from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query, status
 from fastapi.middleware.cors import CORSMiddleware
-from database import engine, Base, SessionLocal
+from database import engine, Base, SessionLocal, migrate_additive_schema
 from seed import seed_database
 from auth import decode_token
 from websocket import manager
@@ -34,6 +34,7 @@ async def lifespan(app: FastAPI):
     # Initialize DB & Seed Data on Startup
     logger.info("Initializing database tables and seed data...")
     Base.metadata.create_all(bind=engine)
+    migrate_additive_schema()
     db = SessionLocal()
     try:
         seed_database(db)
