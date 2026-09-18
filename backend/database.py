@@ -50,6 +50,9 @@ Base = declarative_base()
 def migrate_additive_schema():
     """Add columns introduced after the initial database was created."""
     required_columns = {
+        "teams": {
+            "score_breakdown_json": "TEXT DEFAULT '{}'"
+        },
         "scenarios": {
             "stage_prompts_json": "TEXT DEFAULT '{}'",
             "tactical_hints_json": "TEXT DEFAULT '[]'",

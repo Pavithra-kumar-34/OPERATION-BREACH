@@ -21,12 +21,15 @@ import { useToast } from '../../context/ToastContext';
 export const AdminControlCenter = ({ onNavigate }) => {
   const [analytics, setAnalytics] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [analyticsError, setAnalyticsError] = useState(null);
   const [actionLoading, setActionLoading] = useState(false);
   const [confirmAction, setConfirmAction] = useState(null); // 'START', 'PAUSE', 'RESUME', 'END', 'RESET'
   const [competitionStatus, setCompetitionStatus] = useState('LOCKED');
   const toast = useToast();
 
   const fetchOverview = async () => {
+    setLoading(true);
+    setAnalyticsError(null);
     try {
       const data = await adminApi.getAnalytics();
       setAnalytics(data);
@@ -36,7 +39,8 @@ export const AdminControlCenter = ({ onNavigate }) => {
         setCompetitionStatus('COMPLETED');
       }
     } catch (err) {
-      toast.error('Failed to load control center analytics.');
+      setAnalyticsError(err.message || 'Failed to load control center analytics.');
+      toast.error(err.message || 'Failed to load control center analytics.');
     } finally {
       setLoading(false);
     }
@@ -129,6 +133,20 @@ export const AdminControlCenter = ({ onNavigate }) => {
       </div>
 
       {/* Metrics Row */}
+      {loading ? (
+        <div className="card" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '2rem' }}>
+          <Loader2 size={20} className="spin" color="var(--cyan-primary)" />
+          <span style={{ color: 'var(--text-muted)' }}>Loading platform analytics...</span>
+        </div>
+      ) : analyticsError ? (
+        <div className="card" style={{ marginBottom: '2rem' }}>
+          <div style={{ color: 'var(--rose-danger)', marginBottom: '0.75rem' }}>{analyticsError}</div>
+          <button type="button" onClick={fetchOverview} className="btn btn-secondary">
+            <RotateCcw size={15} />
+            <span>Retry Analytics</span>
+          </button>
+        </div>
+      ) : (
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1.25rem', marginBottom: '2rem' }}>
         <div className="card">
           <div style={{ color: 'var(--text-dim)', fontSize: '0.75rem', textTransform: 'uppercase', fontFamily: 'var(--font-mono)' }}>
@@ -178,6 +196,7 @@ export const AdminControlCenter = ({ onNavigate }) => {
           </div>
         </div>
       </div>
+      )}
 
       {/* Primary Competition Action Bar */}
       <div className="card" style={{ marginBottom: '2rem', borderColor: 'var(--border-glow)' }}>

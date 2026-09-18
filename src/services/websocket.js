@@ -1,3 +1,5 @@
+import { BASE_API_URL } from './api';
+
 class TeamSocketManager {
   constructor() {
     this.socket = null;
@@ -11,8 +13,7 @@ class TeamSocketManager {
   }
 
   getWsUrl(teamId, token) {
-    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
-    const apiEndpoint = new URL(apiUrl, window.location.origin);
+    const apiEndpoint = new URL(BASE_API_URL, window.location.origin);
     const protocol = apiEndpoint.protocol === 'https:' ? 'wss:' : 'ws:';
     const backendPath = apiEndpoint.pathname.replace(/\/$/, '');
     return `${protocol}//${apiEndpoint.host}${backendPath}/ws/team/${teamId}?token=${encodeURIComponent(token || '')}`;

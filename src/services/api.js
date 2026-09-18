@@ -1,4 +1,5 @@
-const BASE_API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+export const BASE_API_URL = import.meta.env.VITE_API_URL || 'https://operation-breach.onrender.com/api';
+console.debug('DEFENDX API BASE URL:', BASE_API_URL);
 
 class ApiClient {
   constructor(baseUrl) {
@@ -12,6 +13,7 @@ class ApiClient {
   async request(endpoint, options = {}) {
     const url = `${this.baseUrl}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
     const token = this.getToken();
+    console.log('DEFENDX REQUEST URL:', url);
 
     const headers = {
       'Content-Type': 'application/json',
@@ -30,6 +32,8 @@ class ApiClient {
 
     try {
       const response = await fetch(url, config);
+      console.log('DEFENDX RESPONSE STATUS:', response.status);
+      console.log('DEFENDX RESPONSE OK:', response.ok);
 
       // Handle 401 Unauthorized globally
       if (response.status === 401) {
@@ -58,6 +62,7 @@ class ApiClient {
       const data = await response.json().catch(() => ({}));
 
       if (!response.ok) {
+        console.error('DEFENDX API ERROR:', { url, status: response.status, body: data });
         let errorMsg = data.detail || 'An unexpected error occurred.';
         if (response.status === 403) {
           errorMsg = data.detail || 'Access forbidden: You do not have permission for this action.';
@@ -77,8 +82,10 @@ class ApiClient {
       return data;
     } catch (err) {
       if (err.name === 'TypeError' && err.message.includes('fetch')) {
-        const netErr = new Error('Unable to connect to DEFENDX server. Please make sure the backend is running on port 8000.');
-        netErr.status = 503;
+        console.error('DEFENDX FETCH ERROR:', err);
+        const netErr = new Error(`Unable to reach DEFENDX server at ${BASE_API_URL}. Network or CORS failure.`);
+        netErr.status = 0;
+        netErr.code = 'NETWORK_OR_CORS_ERROR';
         throw netErr;
       }
       throw err;

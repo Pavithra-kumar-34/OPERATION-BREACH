@@ -17,15 +17,18 @@ import { useToast } from '../../context/ToastContext';
 export const AdminAnalyticsPage = () => {
   const [analytics, setAnalytics] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [analyticsError, setAnalyticsError] = useState(null);
   const toast = useToast();
 
   const fetchAnalytics = async () => {
     setLoading(true);
+    setAnalyticsError(null);
     try {
       const data = await adminApi.getAnalytics();
       setAnalytics(data);
     } catch (err) {
-      toast.error('Failed to load analytics metrics.');
+      setAnalyticsError(err.message || 'Failed to load analytics metrics.');
+      toast.error(err.message || 'Failed to load analytics metrics.');
     } finally {
       setLoading(false);
     }
@@ -44,12 +47,31 @@ export const AdminAnalyticsPage = () => {
     );
   }
 
-  if (!analytics) return null;
+  if (analyticsError) {
+    return (
+      <div className="page-container" style={{ textAlign: 'center', padding: '4rem 0' }}>
+        <div style={{ color: 'var(--rose-danger)', marginBottom: '1rem' }}>{analyticsError}</div>
+        <button type="button" onClick={fetchAnalytics} className="btn btn-secondary">
+          <RefreshCw size={15} />
+          <span>Retry Analytics</span>
+        </button>
+      </div>
+    );
+  }
 
-  const stageEntries = Object.entries(analytics.stage_distribution || {});
-  const scoreEntries = Object.entries(analytics.score_distribution || {});
-  const maxStageCount = Math.max(...stageEntries.map(([, v]) => v), 1);
-  const maxScoreCount = Math.max(...scoreEntries.map(([, v]) => v), 1);
+  const stageKeys = ['DETECT', 'INVESTIGATE', 'ANALYZE', 'IDENTIFY', 'RESPOND', 'REPORT'];
+  const scoreKeys = ['0-250', '251-500', '501-750', '751-1000'];
+  const stageDistribution = analytics?.stage_distribution || {};
+  const scoreDistribution = analytics?.score_distribution || {};
+  const stageEntries = stageKeys.map((stage) => [stage, stageDistribution[stage] ?? null]);
+  const scoreEntries = scoreKeys.map((tier) => [tier, scoreDistribution[tier] ?? null]);
+  const numericValues = (entries) => entries.map(([, value]) => Number(value) || 0);
+  const maxStageCount = Math.max(...numericValues(stageEntries), 1);
+  const maxScoreCount = Math.max(...numericValues(scoreEntries), 1);
+  const displayValue = (value, suffix = '') => value === null || value === undefined ? '—' : `${value}${suffix}`;
+  const displayNumber = (value, suffix = '') => value === null || value === undefined ? '—' : `${Number(value).toFixed(1)}${suffix}`;
+  const totalTeams = analytics?.total_teams;
+  const completedTeams = analytics?.completed_teams;
 
   return (
     <div className="page-container">
@@ -79,11 +101,31 @@ export const AdminAnalyticsPage = () => {
       {/* KPI Cards Grid */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1.25rem', marginBottom: '2rem' }}>
         <div className="card">
+          <div style={{ color: 'var(--text-dim)', fontSize: '0.75rem', textTransform: 'uppercase', fontFamily: 'var(--font-mono)' }}>Total Teams</div>
+          <div style={{ fontSize: '1.75rem', fontWeight: 800, color: 'var(--cyan-primary)', marginTop: '0.25rem', fontFamily: 'var(--font-mono)' }}>{displayValue(analytics?.total_teams)}</div>
+        </div>
+
+        <div className="card">
+          <div style={{ color: 'var(--text-dim)', fontSize: '0.75rem', textTransform: 'uppercase', fontFamily: 'var(--font-mono)' }}>Active Teams</div>
+          <div style={{ fontSize: '1.75rem', fontWeight: 800, color: 'var(--emerald-success)', marginTop: '0.25rem', fontFamily: 'var(--font-mono)' }}>{displayValue(analytics?.active_teams)}</div>
+        </div>
+
+        <div className="card">
+          <div style={{ color: 'var(--text-dim)', fontSize: '0.75rem', textTransform: 'uppercase', fontFamily: 'var(--font-mono)' }}>Completed Teams</div>
+          <div style={{ fontSize: '1.75rem', fontWeight: 800, color: 'var(--violet-primary)', marginTop: '0.25rem', fontFamily: 'var(--font-mono)' }}>{displayValue(analytics?.completed_teams)}</div>
+        </div>
+
+        <div className="card">
+          <div style={{ color: 'var(--text-dim)', fontSize: '0.75rem', textTransform: 'uppercase', fontFamily: 'var(--font-mono)' }}>Total Participants</div>
+          <div style={{ fontSize: '1.75rem', fontWeight: 800, color: '#fbbf24', marginTop: '0.25rem', fontFamily: 'var(--font-mono)' }}>{displayValue(analytics?.total_participants)}</div>
+        </div>
+
+        <div className="card">
           <div style={{ color: 'var(--text-dim)', fontSize: '0.75rem', textTransform: 'uppercase', fontFamily: 'var(--font-mono)' }}>
             Average Squad Score
           </div>
           <div style={{ fontSize: '1.75rem', fontWeight: 800, color: 'var(--cyan-primary)', marginTop: '0.25rem', fontFamily: 'var(--font-mono)' }}>
-            {analytics.average_score} <span style={{ fontSize: '0.9rem', color: 'var(--text-dim)' }}>/ 1000</span>
+            {displayNumber(analytics?.average_score)} <span style={{ fontSize: '0.9rem', color: 'var(--text-dim)' }}>/ 1000</span>
           </div>
           <div style={{ fontSize: '0.75rem', color: 'var(--emerald-success)', marginTop: '0.35rem' }}>
             Normalized 1000-pt Formula
@@ -95,7 +137,7 @@ export const AdminAnalyticsPage = () => {
             Average Accuracy Rate
           </div>
           <div style={{ fontSize: '1.75rem', fontWeight: 800, color: 'var(--emerald-success)', marginTop: '0.25rem', fontFamily: 'var(--font-mono)' }}>
-            {analytics.average_accuracy}%
+            {displayNumber(analytics?.average_accuracy, '%')}
           </div>
           <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
             Across all investigation decisions
@@ -107,10 +149,10 @@ export const AdminAnalyticsPage = () => {
             Operation Completion Rate
           </div>
           <div style={{ fontSize: '1.75rem', fontWeight: 800, color: 'var(--violet-primary)', marginTop: '0.25rem', fontFamily: 'var(--font-mono)' }}>
-            {analytics.operation_completion_rate}%
+            {displayNumber(analytics?.operation_completion_rate, '%')}
           </div>
           <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
-            {analytics.completed_teams} of {analytics.total_teams} teams finished
+            {displayValue(completedTeams)} of {displayValue(totalTeams)} teams finished
           </div>
         </div>
 
@@ -119,11 +161,21 @@ export const AdminAnalyticsPage = () => {
             Training Platform Completion (Afternoon Event)
           </div>
           <div style={{ fontSize: '1.75rem', fontWeight: 800, color: '#fbbf24', marginTop: '0.25rem', fontFamily: 'var(--font-mono)' }}>
-            {analytics.academy_average_completion}%
+            {displayNumber(analytics?.academy_average_completion, '%')}
           </div>
           <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
             Across 14 training modules
           </div>
+        </div>
+
+        <div className="card">
+          <div style={{ color: 'var(--text-dim)', fontSize: '0.75rem', textTransform: 'uppercase', fontFamily: 'var(--font-mono)' }}>Average Completion</div>
+          <div style={{ fontSize: '1.75rem', fontWeight: 800, color: 'var(--cyan-primary)', marginTop: '0.25rem', fontFamily: 'var(--font-mono)' }}>{displayNumber(analytics?.average_completion, '%')}</div>
+        </div>
+
+        <div className="card">
+          <div style={{ color: 'var(--text-dim)', fontSize: '0.75rem', textTransform: 'uppercase', fontFamily: 'var(--font-mono)' }}>Average Efficiency</div>
+          <div style={{ fontSize: '1.75rem', fontWeight: 800, color: 'var(--violet-primary)', marginTop: '0.25rem', fontFamily: 'var(--font-mono)' }}>{displayNumber(analytics?.average_efficiency)}</div>
         </div>
 
       </div>
@@ -140,12 +192,12 @@ export const AdminAnalyticsPage = () => {
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
             {stageEntries.map(([stage, count]) => {
-              const pct = (count / maxStageCount) * 100;
+              const pct = ((Number(count) || 0) / maxStageCount) * 100;
               return (
                 <div key={stage}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', marginBottom: '0.25rem' }}>
                     <span style={{ color: 'var(--text-muted)', fontWeight: 600 }}>{stage}</span>
-                    <span className="mono" style={{ color: '#fff' }}>{count} Teams</span>
+                    <span className="mono" style={{ color: '#fff' }}>{displayValue(count)} Teams</span>
                   </div>
                   <div className="progress-bar-bg" style={{ height: '8px' }}>
                     <div
@@ -173,12 +225,12 @@ export const AdminAnalyticsPage = () => {
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
             {scoreEntries.map(([tier, count]) => {
-              const pct = (count / maxScoreCount) * 100;
+              const pct = ((Number(count) || 0) / maxScoreCount) * 100;
               return (
                 <div key={tier}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', marginBottom: '0.25rem' }}>
                     <span style={{ color: 'var(--text-muted)', fontWeight: 600 }}>{tier} PTS</span>
-                    <span className="mono" style={{ color: '#fff' }}>{count} Teams</span>
+                    <span className="mono" style={{ color: '#fff' }}>{displayValue(count)} Teams</span>
                   </div>
                   <div className="progress-bar-bg" style={{ height: '8px' }}>
                     <div
